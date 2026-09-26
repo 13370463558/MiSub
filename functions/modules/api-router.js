@@ -68,7 +68,11 @@ import {
 } from './handlers/guestbook-handler.js';
 import { handleGithubReleaseRequest } from './handlers/github-proxy-handler.js'; // [NEW] Import handler
 import { handleParseSubscription } from './parse-subscription-handler.js';
-import { safeFetchPublicUrl, validatePublicFetchUrl, redactUrl } from './security-utils.js';
+import {
+    safeFetchPublicNetworkUrl,
+    validatePublicNetworkUrl,
+    redactUrl,
+} from './security-utils.js';
 import { normalizeSubconverterBackend } from './subscription/main-handler.js';
 import { maybeRunScheduledTasks } from './scheduled-task-runner.js';
 import { handleExternalNodesCallbackRequest } from '../services/external-nodes-callback-service.js';
@@ -679,7 +683,7 @@ export async function handleExternalFetchRequest(request, env) {
         return createErrorResponse('URL too long (max 2048 characters)', 400);
     }
 
-    const urlValidation = validatePublicFetchUrl(externalUrl);
+    const urlValidation = validatePublicNetworkUrl(externalUrl);
     if (!urlValidation.ok) {
         return createErrorResponse(urlValidation.error, 400);
     }
@@ -689,7 +693,7 @@ export async function handleExternalFetchRequest(request, env) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        const response = await safeFetchPublicUrl(urlValidation.url.toString(), {
+        const response = await safeFetchPublicNetworkUrl(urlValidation.url.toString(), {
             method: 'GET',
             headers: {
                 'User-Agent': 'v2rayN/7.23',

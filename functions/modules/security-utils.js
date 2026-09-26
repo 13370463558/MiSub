@@ -156,6 +156,53 @@ export function validatePublicNetworkUrl(value) {
     return { ok: true, url };
 }
 
+export async function safeFetchPublicNetworkUrl(inputUrl, init = {}, options = {}) {
+    const maxRedirects = options.maxRedirects ?? MAX_SAFE_REDIRECTS;
+    const validation = validatePublicNetworkUrl(inputUrl);
+    if (!validation.ok) {
+        const error = new Error(validation.error);
+        error.status = 400;
+        throw error;
+    }
+
+    let currentUrl = validation.url.toString();
+    for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
+        const response = await fetch(
+            new Request(currentUrl, {
+                ...init,
+                redirect: 'manual',
+            })
+        );
+
+        if (!isRedirectStatus(response.status)) {
+            return response;
+        }
+
+        const location = response.headers.get('Location');
+        if (!location) {
+            return response;
+        }
+        if (redirectCount >= maxRedirects) {
+            const error = new Error('Too many redirects');
+            error.status = 400;
+            throw error;
+        }
+
+        const nextUrl = new URL(location, currentUrl);
+        const nextValidation = validatePublicNetworkUrl(nextUrl.toString());
+        if (!nextValidation.ok) {
+            const error = new Error(nextValidation.error);
+            error.status = 400;
+            throw error;
+        }
+        currentUrl = nextValidation.url.toString();
+    }
+
+    const error = new Error('Too many redirects');
+    error.status = 400;
+    throw error;
+}
+
 export function assertPublicFetchUrl(inputUrl) {
     const validation = validatePublicFetchUrl(inputUrl);
     if (!validation.ok) {
