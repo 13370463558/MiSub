@@ -428,12 +428,17 @@ export async function generateCombinedNodeList(
             if (customNodeName) processedUrl = applyManualNodeName(processedUrl, customNodeName);
 
             const nodeGroup = typeof sub.group === 'string' ? sub.group.trim() : '';
-            if (prependGroupName && nodeGroup && !skipPrefixDueToRenaming)
+            const shouldAddPrefix = shouldPrependManualNodes && !skipPrefixDueToRenaming;
+            // [新] 用节点所在分组名替代固定的「手动节点」前缀；无分组时回退到 manualNodePrefix
+            const groupUsedAsPrefix = shouldAddPrefix && Boolean(nodeGroup);
+
+            // 分组名已作为「手动节点」前缀时，不再单独 prepend 分组名，避免重复
+            if (prependGroupName && nodeGroup && !skipPrefixDueToRenaming && !groupUsedAsPrefix)
                 processedUrl = prependNodeName(processedUrl, nodeGroup);
 
-            const shouldAddPrefix = shouldPrependManualNodes && !skipPrefixDueToRenaming;
+            const effectiveManualPrefix = nodeGroup || manualNodePrefix;
             const finalRawUrl = shouldAddPrefix
-                ? prependNodeName(processedUrl, manualNodePrefix)
+                ? prependNodeName(processedUrl, effectiveManualPrefix)
                 : processedUrl;
 
             // [核心对齐] 对手动节点应用订阅源级转换（算子+过滤 + 组级诊断）
