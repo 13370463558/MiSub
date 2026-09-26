@@ -654,6 +654,19 @@ export async function handleSubconverterTestRequest(request, env) {
  * @param {Object} env - Cloudflare环境对象
  * @returns {Promise<Response>} HTTP响应
  */
+// 抓取外部订阅时依次尝试的客户端 User-Agent。
+// 部分自建订阅服务会按 UA 识别/拒绝请求（固定 UA 被 403），轮换 UA 可兼容这类场景。
+const EXTERNAL_FETCH_USER_AGENTS = [
+    'v2rayN/7.23',
+    'v2rayNG/1.9.5',
+    'Clash.Meta/1.19.0',
+    'clash-verge/1.7.7',
+    'Shadowrocket/2.2.36',
+    'Streisand/1.4.2',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+];
+
 export async function handleExternalFetchRequest(request, env) {
     if (request.method !== 'POST') {
         return createErrorResponse('Method Not Allowed', 405);
@@ -689,21 +702,35 @@ export async function handleExternalFetchRequest(request, env) {
     }
 
     try {
-        // 创建带超时的请求
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-        const response = await safeFetchPublicNetworkUrl(urlValidation.url.toString(), {
-            method: 'GET',
-            headers: {
-                'User-Agent': 'v2rayN/7.23',
-                Accept: '*/*',
-                'Cache-Control': 'no-cache',
-            },
-            signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
+        // 创建带超时的请求；遇到 403 时轮换常见客户端 User-Agent 重试，
+        // 以兼容按 UA 识别/拒绝请求的自建订阅服务（其它状态码不触发轮换）。
+        let response;
+        for (let i = 0; i < EXTERNAL_FETCH_USER_AGENTS.length; i++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            try {
+                response = await safeFetchPublicNetworkUrl(urlValidation.url.toString(), {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': EXTERNAL_FETCH_USER_AGENTS[i],
+                        Accept: '*/*',
+                        'Cache-Control': 'no-cache',
+                    },
+                    signal: controller.signal,
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
+            if (response.status !== 403 || i === EXTERNAL_FETCH_USER_AGENTS.length - 1) {
+                break;
+            }
+            // 403 且还有其它 UA 可试：丢弃该响应体后继续轮换
+            try {
+                await response.text();
+            } catch (_) {
+                /* ignore */
+            }
+        }
 
         if (!response.ok) {
             const errorText = await response.text();
