@@ -65,66 +65,79 @@
      */
     const importSubscription = async () => {
         const targetGroupName = groupName.value; // Capture immediately to avoid reset by watcher when modal closes
+        const input = subscriptionUrl.value.trim();
 
-        // 验证URL
-        if (!isValidUrl(subscriptionUrl.value)) {
-            errorMessage.value = '请输入有效的 HTTP 或 HTTPS 订阅链接。';
+        if (!input) {
+            errorMessage.value = '请输入订阅链接或 Base64 内容。';
             return;
         }
 
         isLoading.value = true;
-        parseStatus.value = '正在获取订阅内容...';
+        errorMessage.value = '';
+        successMessage.value = '';
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超时
+            let content;
 
-            let responseData;
-            try {
-                responseData = await api.post(
-                    '/api/fetch_external_url',
-                    {
-                        url: subscriptionUrl.value,
-                        timeout: 15000,
-                    },
-                    {
-                        signal: controller.signal,
-                    }
-                );
-            } catch (error) {
-                if (error instanceof APIError) {
-                    const errorMsg =
-                        error.data?.error ||
-                        error.data?.message ||
-                        error.message ||
-                        `HTTP ${error.status}`;
+            if (isValidUrl(input)) {
+                // —— 订阅链接：联网抓取（保持原逻辑，后端含 403 UA 轮换重试）——
+                parseStatus.value = '正在获取订阅内容...';
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超时
 
-                    // 根据错误类型提供友好的错误信息
-                    if (error.status === 408 || errorMsg.includes('timeout')) {
-                        throw new Error('请求超时，请检查网络连接或稍后重试');
-                    } else if (error.status === 413 || errorMsg.includes('too large')) {
-                        throw new Error('订阅内容过大，请使用较小的订阅链接');
-                    } else if (errorMsg.includes('DNS')) {
-                        throw new Error('域名解析失败，请检查订阅链接是否正确');
-                    } else if (error.status >= 500) {
-                        throw new Error('服务器错误，请稍后重试');
+                let responseData;
+                try {
+                    responseData = await api.post(
+                        '/api/fetch_external_url',
+                        {
+                            url: input,
+                            timeout: 15000,
+                        },
+                        {
+                            signal: controller.signal,
+                        }
+                    );
+                } catch (error) {
+                    if (error instanceof APIError) {
+                        const errorMsg =
+                            error.data?.error ||
+                            error.data?.message ||
+                            error.message ||
+                            `HTTP ${error.status}`;
+
+                        // 根据错误类型提供友好的错误信息
+                        if (error.status === 408 || errorMsg.includes('timeout')) {
+                            throw new Error('请求超时，请检查网络连接或稍后重试');
+                        } else if (error.status === 413 || errorMsg.includes('too large')) {
+                            throw new Error('订阅内容过大，请使用较小的订阅链接');
+                        } else if (errorMsg.includes('DNS')) {
+                            throw new Error('域名解析失败，请检查订阅链接是否正确');
+                        } else if (error.status >= 500) {
+                            throw new Error('服务器错误，请稍后重试');
+                        }
+                        throw new Error(errorMsg);
                     }
-                    throw new Error(errorMsg);
+                    throw error;
+                } finally {
+                    clearTimeout(timeoutId);
                 }
-                throw error;
-            } finally {
-                clearTimeout(timeoutId);
-            }
 
-            if (!responseData.success) {
-                throw new Error(responseData.error || '获取订阅内容失败');
+                if (!responseData.success) {
+                    throw new Error(responseData.error || '获取订阅内容失败');
+                }
+                content = responseData.content;
+            } else {
+                // —— Base64 / 原始节点链接：直接交后端解析，不发外网请求，不会 403 ——
+                // 后端 parseNodeList 会自动识别并解码整段 Base64 订阅内容
+                parseStatus.value = '正在解析订阅内容...';
+                content = input;
             }
 
             parseStatus.value = `正在解析订阅内容...`;
 
             // [重构] 调用后端解析API
             const parseResult = await api.post('/api/parse_subscription', {
-                content: responseData.content,
+                content,
             });
 
             if (!parseResult.success) {
@@ -172,7 +185,7 @@
             } else {
                 parseStatus.value = '';
                 throw new Error(
-                    '未能从订阅链接中解析出任何有效节点。请检查链接内容是否包含支持的节点格式。'
+                    '未能解析出任何有效节点。请检查是否为有效的 Base64 订阅或 vmess/vless 等节点链接。'
                 );
             }
         } catch (error) {
