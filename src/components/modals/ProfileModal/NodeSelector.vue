@@ -2,6 +2,7 @@
     import { computed } from 'vue';
     import draggable from 'vuedraggable';
     import { useI18n } from '@/i18n/index.js';
+    import ProtocolBadge from '@/components/ui/ProtocolBadge.vue';
 
     const { t } = useI18n();
 
@@ -154,8 +155,9 @@
                         @change="emit('toggle-selection', node.id)"
                         class="h-4 w-4 rounded-sm border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
+                    <ProtocolBadge :url="node.url" />
                     <span
-                        class="text-sm text-gray-800 dark:text-gray-200 truncate"
+                        class="flex-1 min-w-0 text-sm text-gray-800 dark:text-gray-200 truncate"
                         :title="node.name"
                         >{{ node.name || t('manualNodes.unnamed') }}</span
                     >
@@ -205,8 +207,9 @@
                             class="text-xs font-medium text-indigo-600 dark:text-indigo-400 w-5"
                             >{{ index + 1 }}</span
                         >
+                        <ProtocolBadge :url="element.url" />
                         <span
-                            class="text-sm text-gray-800 dark:text-gray-200 truncate flex-1"
+                            class="flex-1 min-w-0 text-sm text-gray-800 dark:text-gray-200 truncate"
                             :title="element.name"
                         >
                             {{ element.name || t('manualNodes.unnamed') }}
